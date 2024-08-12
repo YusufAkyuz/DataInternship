@@ -1,5 +1,4 @@
 import csv
-from datetime import datetime
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
@@ -15,15 +14,10 @@ cleaned_logs = []
 with open(log_file, 'r') as f:
     logs = f.readlines()
 
-for log in logs:
-    parts = log.split()
-    try:
-        ip = parts[0]
-        timestamp = parts[3].strip('[') + ' ' + parts[4].strip(']')
-        url = parts[6]
-        cleaned_logs.append((ip, timestamp, url))
-    except IndexError:
-        continue
+cleaned_logs = [(parts[0], parts[3].strip('[') + ' ' + parts[4].strip(']'), parts[6])
+                for log in logs
+                for parts in [log.split()]
+                if len(parts) >= 7]
 
 # Save the cleaned data to a CSV file
 csv_file = 'cleaned_logs.csv'
@@ -45,6 +39,9 @@ X = vectorizer.fit_transform(df['URL'])
 # Convert vectors to numpy array
 vectors = X.toarray().astype(np.float32)
 
+# Print vector dimension
+print(f'Vector dimension: {vectors.shape[1]}')
+
 # Check for non-zero vectors
 if np.count_nonzero(vectors) == 0:
     raise ValueError("All vectors are zero vectors. Check the input data and vectorizer parameters.")
@@ -64,22 +61,37 @@ if index_name in indexes:
 
 # Create new index with correct dimension
 dimension = vectors.shape[1]
-pc.create_index(
-    name=index_name,
-    dimension=dimension,
-    metric='cosine',
-    spec=ServerlessSpec(
-        cloud='aws',
-        region='us-east-1'  # Updated region based on the free plan's available regions
+try:
+    pc.create_index(
+        name=index_name,
+        dimension=dimension,
+        metric='cosine',
+        spec=ServerlessSpec(
+            cloud='aws',
+            region='us-east-1'  # Updated region based on the free plan's available regions
+        )
     )
-)
+except Exception as e:
+    print(f"Error creating index: {e}")
 
 index = pc.Index(index_name)
 
+index_info = pc.describe_index(index_name)
+print(index_info)
+
 # Upsert vectors to Pinecone index
 ids = [str(i) for i in range(len(vectors))]
-index.upsert(vectors=zip(ids, vectors))
 
-# Query the index with the first vector
-result = index.query(queries=vectors[:1], top_k=2)
-print(result)
+# Ensure non-zero vectors before upserting
+non_zero_vectors = [(id_, vec.tolist()) for id_, vec in zip(ids, vectors) if np.any(vec != 0)]
+index.upsert(vectors=non_zero_vectors)
+
+# Query generation and vectorization (modify as needed)
+query = '::1,12/Aug/2024:12:20:49 +0300,/key=ali'
+query_vector = vectorizer.transform([query]).toarray().astype(np.float32).tolist()[0]
+print(vectors[0])
+try:
+    result = index.query(queries = vectors[0], top_k=2)
+    print(result)
+except Exception as e:
+    print(f"Error querying index: {e}")
