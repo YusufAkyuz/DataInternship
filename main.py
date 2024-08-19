@@ -10,7 +10,7 @@ log_file = '/private/var/log/apache2/access_log'
 # Empty list for required data
 cleaned_logs = []
 
-# Read data and push to list
+# Read data and push list
 with open(log_file, 'r') as f:
     logs = f.readlines()
 
